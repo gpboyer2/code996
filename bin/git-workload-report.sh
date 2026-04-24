@@ -115,6 +115,9 @@ def is_git_repo(path):
 def git_root(path):
     return os.path.realpath(run_git(path, ["rev-parse", "--show-toplevel"]).strip())
 
+def git_branch(path):
+    return run_git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
+
 def discover_repos():
     candidates = input_paths or [default_dir]
     roots = []
@@ -278,8 +281,8 @@ def print_terminal_report(payload):
     project_counts = group_count(commits, "project")
     project_rows = []
     for repo in payload["repos"]:
-        project_rows.append([repo["name"], format_number(project_counts.get(repo["name"], 0)), repo["path"]])
-    print_rows(["项目", "提交", "路径"], project_rows)
+        project_rows.append([repo["name"], repo["branch"], format_number(project_counts.get(repo["name"], 0)), repo["path"]])
+    print_rows(["项目", "分支", "提交", "路径"], project_rows)
     print()
 
     print("开发者工作量")
@@ -358,7 +361,7 @@ payload = {
     },
     "projects": projects,
     "authors": authors,
-    "repos": [{"name": os.path.basename(path), "path": path} for path in repos],
+    "repos": [{"name": os.path.basename(path), "branch": git_branch(path), "path": path} for path in repos],
     "commits": all_commits,
     "errors": errors,
 }

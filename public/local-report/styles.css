@@ -164,6 +164,38 @@ input {
   cursor: pointer;
 }
 
+.repo-info-list {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel-soft);
+}
+
+.repo-info-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel);
+}
+
+.repo-info-name {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.repo-info-meta {
+  display: grid;
+  gap: 3px;
+  color: var(--color-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

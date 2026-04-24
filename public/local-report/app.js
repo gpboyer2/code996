@@ -23,14 +23,13 @@ const chartMap = new Map()
 
 const state = {
   data: null,
-  selectedProjects: new Set(),
   selectedAuthors: new Set(),
   period: "all",
 }
 
 const dom = {
   reportMeta: document.getElementById("reportMeta"),
-  projectChoices: document.getElementById("projectChoices"),
+  repoInfoList: document.getElementById("repoInfoList"),
   authorChoices: document.getElementById("authorChoices"),
   periodChoices: document.getElementById("periodChoices"),
   dateRangeLabel: document.getElementById("dateRangeLabel"),
@@ -121,6 +120,26 @@ function renderChoices(container, values, selectedSet) {
   })
 }
 
+function renderRepoInfo() {
+  dom.repoInfoList.textContent = ""
+  state.data.repos.forEach((repo) => {
+    const item = document.createElement("div")
+    const name = document.createElement("div")
+    const meta = document.createElement("div")
+    const branch = document.createElement("span")
+    const path = document.createElement("span")
+    item.className = "repo-info-item"
+    name.className = "repo-info-name"
+    meta.className = "repo-info-meta"
+    name.textContent = repo.name
+    branch.textContent = `分支：${repo.branch}`
+    path.textContent = repo.path
+    meta.append(branch, path)
+    item.append(name, meta)
+    dom.repoInfoList.append(item)
+  })
+}
+
 function renderPeriodChoices() {
   dom.periodChoices.textContent = ""
   periodOptions.forEach((option) => {
@@ -192,7 +211,6 @@ function getFilteredCommits() {
   return state.data.commits.filter((commit) => {
     if (startDate && commit.date < startDate) return false
     if (endDate && commit.date > endDate) return false
-    if (state.selectedProjects.size > 0 && !state.selectedProjects.has(commit.project)) return false
     if (state.selectedAuthors.size > 0 && !state.selectedAuthors.has(commit.author)) return false
     return true
   })
@@ -345,11 +363,10 @@ function render() {
 async function bootstrap() {
   const response = await fetch("report-data.json")
   state.data = await response.json()
-  renderChoices(dom.projectChoices, state.data.projects, state.selectedProjects)
+  renderRepoInfo()
   renderChoices(dom.authorChoices, state.data.authors, state.selectedAuthors)
   renderPeriodChoices()
   applyPeriod(state.period)
-  bindChoices(dom.projectChoices, state.selectedProjects)
   bindChoices(dom.authorChoices, state.selectedAuthors)
   dom.periodChoices.addEventListener("click", (event) => {
     const button = event.target
