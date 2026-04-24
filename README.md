@@ -1,6 +1,6 @@
 # git-workload-report
 
-`git-workload-report` 是一个面向中文团队的 Git 工作量统计工具。它读取本地 Git 仓库历史，统计指定时间范围内的提交次数、新增代码行、删除代码行、周分布和小时分布，并在本机启动中文可视化报告页。
+`git-workload-report` 是一个面向中文团队的 Git 工作量统计工具。它读取本地 Git 仓库历史，统计指定时间范围内的提交次数、新增代码行、删除代码行、周分布和小时分布，默认直接在终端输出完整汇总报告，也可以启动本机中文可视化报告页。
 
 ## 设计目标
 
@@ -11,7 +11,7 @@
 
 ## 快速使用
 
-在任意 Git 仓库根目录执行：
+在任意 Git 仓库根目录执行，默认输出终端报告：
 
 ```bash
 bash /path/to/git-workload-report.sh 2026-04-01 2026-04-24
@@ -29,7 +29,13 @@ git-workload-report 2026-04-01 2026-04-24
 git-workload-report 2026-04-01 2026-04-24 peng
 ```
 
-运行后工具会启动本地服务并打开类似地址：
+需要打开浏览器查看可视化页面时，使用 `web` 模式：
+
+```bash
+git-workload-report web 2026-04-01 2026-04-24 peng
+```
+
+Web 模式会启动本地服务并打开类似地址：
 
 ```text
 http://127.0.0.1:19960/?time=2026-04-01_2026-04-24&...
@@ -56,7 +62,7 @@ GIT_WORKLOAD_REPORT_PORT=21000 git-workload-report 2026-04-01 2026-04-24
 
 ## 说明
 
-报告页位于 `public/local-report/index.html`，打包时会一起进入 release 产物。脚本启动的是 `127.0.0.1` 本地服务，统计参数通过本地 URL 传递，不需要公网。
+终端报告和 Web 页面共用脚本生成的同一份 `report-data.json`，避免两套统计逻辑不一致。报告页位于 `public/local-report/index.html`，打包时会一起进入 release 产物。脚本启动的是 `127.0.0.1` 本地服务，不需要公网。
 
 ## 开发与验证
 

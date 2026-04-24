@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 
-# 本脚本的业务目的必须保持清晰：给中文用户统计 Git 项目工作量，并打开本机 localhost 报告页。
+# 本脚本的业务目的必须保持清晰：给中文用户统计 Git 项目工作量。
 # 禁止把报告入口改回 GitHub Pages、Vercel 或任何外网地址；打包后的产物必须不依赖公网服务。
 # 项目已经从原始加班分析场景改为通用 Git 工作量统计场景，入口命名只使用 git-workload-report。
-# 本脚本启动时会生成本地 report-data.json，页面必须基于这份本地数据做项目、人员、时间段筛选。
+# 本脚本启动时会生成本地 report-data.json，终端报告和页面必须基于这份本地数据展示。
 
 Help()
 {
    echo "你可以使用自定义参数进行指定查询"
    echo
-   echo "格式: git-workload-report [开始日期] [结束日期] [作者关键词] [仓库路径...]"
+   echo "格式:"
+   echo "  git-workload-report [开始日期] [结束日期] [作者关键词] [仓库路径...]"
+   echo "  git-workload-report web [开始日期] [结束日期] [作者关键词] [仓库路径...]"
    echo "示例: git-workload-report 2026-04-01 2026-04-24 peng /path/to/project-a /path/to/project-b"
    echo "说明:"
+   echo "  默认直接在终端输出完整汇总报告。"
+   echo "  使用 web 子命令时启动本机 localhost 可视化报告页。"
    echo "  不传仓库路径时，若当前目录是 Git 仓库则分析当前项目；否则扫描当前目录下的一层 Git 仓库。"
    echo "  作者关键词只作为启动时默认筛选，页面打开后仍可多选项目、人员并调整时间段。"
    echo
@@ -23,9 +27,16 @@ then
     exit 0
 fi
 
+report_mode="terminal"
+if [ "$1" == "web" ]
+then
+    report_mode="web"
+    shift
+fi
+
 if ! command -v python3 >/dev/null 2>&1
 then
-    echo "未找到 python3，无法启动 localhost 本地网页。"
+    echo "未找到 python3，无法生成 Git 工作量报告。"
     echo "请先安装 python3 后重新运行。"
     exit 1
 fi
@@ -79,16 +90,19 @@ do
 done
 
 work_dir=`mktemp -d /tmp/git-workload-report.XXXXXX`
-cp -R "$source_web_dir"/. "$work_dir"/
+if [ "$report_mode" = "web" ]
+then
+    cp -R "$source_web_dir"/. "$work_dir"/
+fi
 
-python3 - "$time_start" "$time_end" "$author" "$PWD" "$work_dir/report-data.json" "$@" <<'PY'
+python3 - "$report_mode" "$time_start" "$time_end" "$author" "$PWD" "$work_dir/report-data.json" "$@" <<'PY'
 import json
 import os
 import subprocess
 import sys
 from datetime import datetime
 
-time_start, time_end, author_filter, current_dir, output_path, *input_paths = sys.argv[1:]
+report_mode, time_start, time_end, author_filter, current_dir, output_path, *input_paths = sys.argv[1:]
 
 def run_git(repo_path, args):
     return subprocess.check_output(["git", "-C", repo_path, *args], text=True, stderr=subprocess.DEVNULL)
@@ -187,6 +201,145 @@ def parse_commits(repo_path):
         commits.append(current)
     return commits
 
+def format_number(value):
+    return f"{value:,}"
+
+def date_diff_days(start_date, end_date):
+    start = datetime.fromisoformat(start_date)
+    end = datetime.fromisoformat(end_date)
+    return max((end - start).days + 1, 1)
+
+def estimate_hours(commits):
+    by_date = {}
+    for commit in commits:
+        by_date.setdefault(commit["date"], []).append(int(commit["hour"]))
+    total_hours = 0
+    for hours in by_date.values():
+        total_hours += max(hours) - min(hours) + 1
+    return len(by_date), total_hours
+
+def group_count(commits, key, seed=None):
+    result = {item: 0 for item in (seed or [])}
+    for commit in commits:
+        value = commit[key]
+        result[value] = result.get(value, 0) + 1
+    return result
+
+def print_rows(headers, rows):
+    if not rows:
+        print("  当前筛选条件下没有数据")
+        return
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, value in enumerate(row):
+            widths[index] = max(widths[index], len(str(value)))
+    header_line = "  " + "  ".join(str(value).ljust(widths[index]) for index, value in enumerate(headers))
+    separator = "  " + "  ".join("-" * width for width in widths)
+    print(header_line)
+    print(separator)
+    for row in rows:
+        print("  " + "  ".join(str(value).ljust(widths[index]) for index, value in enumerate(row)))
+
+def print_terminal_report(payload):
+    commits = payload["commits"]
+    default_filter = payload["default_filter"]
+    total_added = sum(commit["added"] for commit in commits)
+    total_deleted = sum(commit["deleted"] for commit in commits)
+    total_net = total_added - total_deleted
+    days = date_diff_days(default_filter["start_date"], default_filter["end_date"])
+    work_days, total_hours = estimate_hours(commits)
+    daily_commits = len(commits) / days
+    daily_hours = total_hours / work_days if work_days else 0
+    weekly_hours = daily_hours * 5
+    overtime_hours = max(weekly_hours - 40, 0)
+    overtime_ratio = overtime_hours / weekly_hours * 100 if weekly_hours else 0
+
+    print()
+    print("Git 工作量报告")
+    print("=" * 40)
+    print(f"统计时间范围：{default_filter['start_date']} 至 {default_filter['end_date']}")
+    if default_filter["author_keyword"]:
+        print(f"作者关键词：{default_filter['author_keyword']}")
+    print(f"生成时间：{payload['generated_at']}")
+    print()
+
+    print("核心汇总")
+    print(f"  项目数量：{format_number(len(payload['projects']))}")
+    print(f"  开发者数量：{format_number(len(payload['authors']))}")
+    print(f"  提交次数：{format_number(len(commits))}")
+    print(f"  新增代码行：{format_number(total_added)}")
+    print(f"  删除代码行：{format_number(total_deleted)}")
+    print(f"  净变化行数：{format_number(total_net)}")
+    print(f"  日均提交次数：{daily_commits:.1f}")
+    print(f"  日均工作时长：{daily_hours:.1f}h")
+    print(f"  每周工作时长：{weekly_hours:.1f}h")
+    print(f"  加班时间占比：{overtime_ratio:.1f}%")
+    print()
+
+    print("项目清单")
+    project_counts = group_count(commits, "project")
+    project_rows = []
+    for repo in payload["repos"]:
+        project_rows.append([repo["name"], format_number(project_counts.get(repo["name"], 0)), repo["path"]])
+    print_rows(["项目", "提交", "路径"], project_rows)
+    print()
+
+    print("开发者工作量")
+    author_rows = []
+    author_map = {}
+    for commit in commits:
+        author = commit["author"]
+        if author not in author_map:
+            author_map[author] = {"commits": 0, "added": 0, "deleted": 0, "dates": set()}
+        row = author_map[author]
+        row["commits"] += 1
+        row["added"] += commit["added"]
+        row["deleted"] += commit["deleted"]
+        row["dates"].add(commit["date"])
+    for author, row in sorted(author_map.items(), key=lambda item: item[1]["commits"], reverse=True):
+        author_rows.append([
+            author,
+            format_number(row["commits"]),
+            format_number(row["added"]),
+            format_number(row["deleted"]),
+            format_number(len(row["dates"])),
+        ])
+    print_rows(["开发者", "提交", "新增", "删除", "工作天数"], author_rows)
+    print()
+
+    print("一周七天提交分布")
+    week_labels = {"1": "周一", "2": "周二", "3": "周三", "4": "周四", "5": "周五", "6": "周六", "7": "周日"}
+    week_counts = group_count(commits, "week_day", ["1", "2", "3", "4", "5", "6", "7"])
+    print_rows(["星期", "提交"], [[week_labels[key], format_number(value)] for key, value in week_counts.items()])
+    print()
+
+    print("24 小时提交分布")
+    hour_counts = group_count(commits, "hour", [str(index).zfill(2) for index in range(24)])
+    print_rows(["时间", "提交"], [[f"{key}:00", format_number(value)] for key, value in hour_counts.items()])
+    print()
+
+    if payload["errors"]:
+        print("部分项目读取失败")
+        for error in payload["errors"]:
+            print(f"  - {error['project']}: {error['message']}")
+        print()
+
+def print_web_summary(payload):
+    commits = payload["commits"]
+    total_added = sum(commit["added"] for commit in commits)
+    total_deleted = sum(commit["deleted"] for commit in commits)
+    default_filter = payload["default_filter"]
+    print(f"统计时间范围：{default_filter['start_date']} 至 {default_filter['end_date']}")
+    print(f"项目数量：{len(payload['projects'])}")
+    print(f"开发者数量：{len(payload['authors'])}")
+    print(f"提交次数：{len(commits)}")
+    print(f"新增代码行：{total_added}")
+    print(f"删除代码行：{total_deleted}")
+    if payload["errors"]:
+        print("部分项目读取失败：")
+        for error in payload["errors"]:
+            print(f"  - {error['project']}: {error['message']}")
+
 repos = discover_repos()
 all_commits = []
 errors = []
@@ -214,19 +367,17 @@ payload = {
 with open(output_path, "w", encoding="utf-8") as file:
     json.dump(payload, file, ensure_ascii=False)
 
-total_added = sum(commit["added"] for commit in all_commits)
-total_deleted = sum(commit["deleted"] for commit in all_commits)
-print(f"统计时间范围：{time_start} 至 {time_end}")
-print(f"项目数量：{len(projects)}")
-print(f"开发者数量：{len(authors)}")
-print(f"提交次数：{len(all_commits)}")
-print(f"新增代码行：{total_added}")
-print(f"删除代码行：{total_deleted}")
-if errors:
-    print("部分项目读取失败：")
-    for error in errors:
-        print(f"  - {error['project']}: {error['message']}")
+if report_mode == "web":
+    print_web_summary(payload)
+else:
+    print_terminal_report(payload)
 PY
+
+if [ "$report_mode" != "web" ]
+then
+    rm -rf "$work_dir"
+    exit 0
+fi
 
 find_free_port()
 {
@@ -254,8 +405,22 @@ then
     exit 1
 fi
 
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$work_dir" >/tmp/git-workload-report-$port.log 2>&1 &
-server_pid=$!
+server_pid=`python3 - "$port" "$work_dir" "/tmp/git-workload-report-$port.log" <<'PY'
+import subprocess
+import sys
+
+port, work_dir, log_path = sys.argv[1:]
+log_file = open(log_path, "ab")
+process = subprocess.Popen(
+    [sys.executable, "-m", "http.server", port, "--bind", "127.0.0.1", "--directory", work_dir],
+    stdin=subprocess.DEVNULL,
+    stdout=log_file,
+    stderr=subprocess.STDOUT,
+    start_new_session=True,
+)
+print(process.pid)
+PY
+`
 local_url="http://127.0.0.1:$port/"
 
 echo
