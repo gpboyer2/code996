@@ -76,4 +76,4 @@ npm run build-local
 npm run build-github
 ```
 
-`build-local` 会在本机生成压缩包。`build-github` 会推送当前分支并触发 GitHub Actions 的 Release workflow，远端再生成发布制品。
+`build-local` 会在本机生成压缩包。`build-github` 不依赖 gh，只会创建并推送版本 tag，GitHub Actions 捕获 tag 后自动生成发布制品；如果版本 tag 已存在，需要先升级版本号。

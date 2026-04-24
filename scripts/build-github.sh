@@ -9,24 +9,10 @@ then
     version=$(node -e "console.log(require('./package.json').version)")
 fi
 
-if ! command -v gh >/dev/null 2>&1
-then
-    echo "未找到 gh，无法触发 GitHub Actions。"
-    echo "请先安装 GitHub CLI 并登录后重试。"
-    exit 1
-fi
-
-if ! gh auth status >/dev/null 2>&1
-then
-    echo "gh 尚未登录，无法触发 GitHub Actions。"
-    echo "请先运行 gh auth login。"
-    exit 1
-fi
-
 branch=$(git branch --show-current)
 if [ -z "$branch" ]
 then
-    echo "当前不在普通分支上，无法确定触发 workflow 的 ref。"
+    echo "当前不在普通分支上，无法创建发布 tag。"
     exit 1
 fi
 
@@ -37,9 +23,24 @@ then
     exit 1
 fi
 
-git push origin "$branch"
-gh workflow run Release --ref "$branch" --field version="$version"
+tag_name="v$version"
+if git rev-parse "$tag_name" >/dev/null 2>&1
+then
+    echo "本地已存在 tag：$tag_name"
+    echo "请先升级 package.json 版本号，或手动处理旧 tag 后再运行。"
+    exit 1
+fi
 
-echo "已触发 GitHub Actions 构建：Release"
-echo "分支：$branch"
+if git ls-remote --exit-code --tags origin "refs/tags/$tag_name" >/dev/null 2>&1
+then
+    echo "远端已存在 tag：$tag_name"
+    echo "请先升级 package.json 版本号，或手动处理远端旧 tag 后再运行。"
+    exit 1
+fi
+
+git tag "$tag_name"
+git push origin "$tag_name"
+
+echo "已推送 tag，GitHub Actions 会自动触发 Release 构建。"
+echo "tag：$tag_name"
 echo "版本：$version"
