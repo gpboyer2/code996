@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <!--
+      本页面的业务目的必须保持清晰：它是打包产物内置的离线中文报告页。
+      禁止把数据展示入口改回 GitHub Pages、Vercel 或任何外网网页；脚本只能启动 localhost。
+    -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Git 工作量离线报告</title>
+    <style>
+      :root {
+        --color-bg: #f6f8fb;
+        --color-panel: #ffffff;
+        --color-text: #1f2937;
+        --color-muted: #667085;
+        --color-border: #d9e2ec;
+        --color-primary: #2563eb;
+        --color-primary-soft: #dbeafe;
+        --color-green: #059669;
+        --color-red: #dc2626;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+      }
+
+      .page {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+
+      .page-header {
+        margin-bottom: 24px;
+      }
+
+      .page-header h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        line-height: 1.3;
+      }
+
+      .page-header p {
+        margin: 0;
+        color: var(--color-muted);
+        font-size: 14px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+
+      .summary-card {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .summary-card .label {
+        color: var(--color-muted);
+        font-size: 13px;
+      }
+
+      .summary-card .value {
+        margin-top: 8px;
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .summary-card .value.added {
+        color: var(--color-green);
+      }
+
+      .summary-card .value.deleted {
+        color: var(--color-red);
+      }
+
+      .section {
+        margin-bottom: 20px;
+      }
+
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .chart {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        min-height: 260px;
+        padding: 18px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        overflow-x: auto;
+      }
+
+      .bar-item {
+        display: grid;
+        grid-template-rows: 1fr auto auto;
+        align-items: end;
+        justify-items: center;
+        min-width: 36px;
+        height: 220px;
+      }
+
+      .bar {
+        width: 24px;
+        min-height: 4px;
+        border-radius: 4px 4px 0 0;
+        background: var(--color-primary);
+      }
+
+      .bar-value {
+        margin-top: 8px;
+        color: var(--color-muted);
+        font-size: 12px;
+      }
+
+      .bar-label {
+        margin-top: 4px;
+        color: var(--color-text);
+        font-size: 12px;
+      }
+
+      .empty {
+        width: 100%;
+        padding: 48px 16px;
+        text-align: center;
+        color: var(--color-muted);
+      }
+
+      @media (max-width: 760px) {
+        .summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <h1>Git 工作量离线报告</h1>
+        <p id="reportMeta"></p>
+      </header>
+
+      <section class="summary-grid">
+        <article class="summary-card">
+          <div class="label">提交次数</div>
+          <div class="value" id="commitCount">0</div>
+        </article>
+        <article class="summary-card">
+          <div class="label">新增代码行</div>
+          <div class="value added" id="addedLines">0</div>
+        </article>
+        <article class="summary-card">
+          <div class="label">删除代码行</div>
+          <div class="value deleted" id="deletedLines">0</div>
+        </article>
+        <article class="summary-card">
+          <div class="label">净变化行数</div>
+          <div class="value" id="netLines">0</div>
+        </article>
+      </section>
+
+      <section class="section">
+        <h2>一周七天提交分布</h2>
+        <div class="chart" id="weekChart"></div>
+      </section>
+
+      <section class="section">
+        <h2>24 小时提交分布</h2>
+        <div class="chart" id="hourChart"></div>
+      </section>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(window.location.search)
+      const weekLabels = {
+        1: "周一",
+        2: "周二",
+        3: "周三",
+        4: "周四",
+        5: "周五",
+        6: "周六",
+        7: "周日",
+      }
+
+      function parseSeries(value) {
+        if (!value) return []
+        return value
+          .split(",")
+          .filter(Boolean)
+          .map((item) => {
+            const [count, label] = item.split("_")
+            return { label, count: Number(count) || 0 }
+          })
+      }
+
+      function formatNumber(value) {
+        return Number(value || 0).toLocaleString("zh-CN")
+      }
+
+      function renderChart(containerId, list, labelFormatter) {
+        const container = document.getElementById(containerId)
+        const max = Math.max(...list.map((item) => item.count), 0)
+
+        if (!list.length || max === 0) {
+          container.innerHTML = '<div class="empty">当前时间范围内没有可展示的数据</div>'
+          return
+        }
+
+        container.innerHTML = list
+          .map((item) => {
+            const height = Math.max(4, Math.round((item.count / max) * 170))
+            const label = labelFormatter(item.label)
+            return `
+              <div class="bar-item">
+                <div class="bar" style="height: ${height}px"></div>
+                <div class="bar-value">${formatNumber(item.count)}</div>
+                <div class="bar-label">${label}</div>
+              </div>
+            `
+          })
+          .join("")
+      }
+
+      const time = params.get("time") || ""
+      const [startTime = "", endTime = ""] = time.split("_")
+      const commitCount = Number(params.get("commits") || 0)
+      const addedLines = Number(params.get("added") || 0)
+      const deletedLines = Number(params.get("deleted") || 0)
+      const netLines = addedLines - deletedLines
+
+      document.getElementById("reportMeta").textContent =
+        startTime && endTime
+          ? `统计时间范围：${startTime} 至 ${endTime}`
+          : "统计时间范围：未指定"
+      document.getElementById("commitCount").textContent = formatNumber(commitCount)
+      document.getElementById("addedLines").textContent = formatNumber(addedLines)
+      document.getElementById("deletedLines").textContent = formatNumber(deletedLines)
+      document.getElementById("netLines").textContent = formatNumber(netLines)
+
+      renderChart("weekChart", parseSeries(params.get("week")), (label) => weekLabels[label] || label)
+      renderChart("hourChart", parseSeries(params.get("hour")), (label) => `${label}:00`)
+    </script>
+  </body>
+</html>

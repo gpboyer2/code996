@@ -34,7 +34,10 @@ tests/
 !README.md
 .cursor/
 .claude/
-public/
+public/*
+!public/local-report
+!public/local-report/
+!public/local-report/index.html
 
 # Git 相关
 .git

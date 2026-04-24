@@ -1,11 +1,16 @@
 {
-  "name": "code996",
+  "name": "git-workload-report",
   "version": "1.0.1",
-  "description": "统计 Git commit 的时间分布，进而推导出项目的编码工作强度",
-  "main": "dist/index.js",
+  "description": "离线统计 Git 项目的提交、作者、时间分布和代码改动量",
   "bin": {
-    "code996": "./dist/index.js"
+    "git-workload-report": "./bin/git-workload-report.sh"
   },
+  "files": [
+    "bin/git-workload-report.sh",
+    "public/local-report/index.html",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
@@ -15,13 +20,14 @@
   },
   "keywords": [
     "git",
-    "996",
+    "git-report",
+    "commit-statistics",
     "workload",
     "analysis",
     "cli"
   ],
-  "author": "hellodigua",
-  "repository": "hellodigua/code996",
+  "author": "gpboyer2",
+  "repository": "gpboyer2/git-workload-report",
   "license": "MIT",
   "devDependencies": {
     "@types/jest": "^29.5.12",
