@@ -1,6 +1,6 @@
 {
   "name": "git-workload-report",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "离线统计 Git 项目的提交、作者、时间分布和代码改动量",
   "bin": {
     "git-workload-report": "./bin/git-workload-report.sh"
