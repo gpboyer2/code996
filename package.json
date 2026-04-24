@@ -8,6 +8,7 @@
   "files": [
     "bin/git-workload-report.sh",
     "start.sh",
+    "directory.txt",
     "public/local-report",
     "README.md",
     "LICENSE"

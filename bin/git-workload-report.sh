@@ -6,6 +6,7 @@
 # 本脚本启动时会生成本地 report-data.json，终端报告和页面必须基于这份本地数据展示。
 # 用户这次明确要求 directory 参数指向一个用户自定义名称的 .txt 配置文件。
 # 这里的 directory 不是仓库目录，而是“仓库目录清单文件”；禁止改成自动猜测目录或兼容其他后缀。
+# 制品根目录必须内置 directory.txt；用户不传 directory 参数时，默认读取这个文件。
 # 配置文件每行写一个 Git 仓库路径，空行和 # 开头的注释行会被忽略。
 
 Help()
@@ -22,8 +23,9 @@ Help()
    echo "  默认直接在终端输出完整汇总报告。"
    echo "  使用 web 子命令时启动本机 localhost 可视化报告页。"
    echo "  directory 参数必须指向 .txt 配置文件，文件名可自定义，后缀必须是 txt。"
+   echo "  不传 directory 参数时，默认读取制品根目录的 directory.txt。"
    echo "  directory 配置文件每行写一个 Git 仓库路径，空行和 # 开头的注释行会被忽略。"
-   echo "  不传仓库路径时，默认从脚本所在目录向上查找 Git 仓库根目录。"
+   echo "  directory.txt 不存在且不传仓库路径时，才从脚本所在目录向上查找 Git 仓库根目录。"
    echo "  作者关键词只作为启动时默认筛选，页面打开后仍可多选项目、人员并调整时间段。"
    echo
 }
@@ -52,24 +54,6 @@ do
         ;;
     esac
 done
-
-if [ -n "$directory_config_path" ]
-then
-    case "$directory_config_path" in
-    *.txt)
-        ;;
-    *)
-        echo "directory 参数必须指向 txt 配置文件，例如：directory=/path/to/directory.txt"
-        exit 1
-        ;;
-    esac
-
-    if [ ! -f "$directory_config_path" ]
-    then
-        echo "directory 配置文件不存在：$directory_config_path"
-        exit 1
-    fi
-fi
 
 if ! command -v python3 >/dev/null 2>&1
 then
@@ -115,7 +99,31 @@ open_local_url()
 
 script_path=`python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}"`
 script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+default_directory_config_path="$script_dir/../directory.txt"
 source_web_dir="$(cd "$script_dir/../public/local-report" && pwd)"
+
+if [ -z "$directory_config_path" ] && [ -f "$default_directory_config_path" ]
+then
+    directory_config_path="$default_directory_config_path"
+fi
+
+if [ -n "$directory_config_path" ]
+then
+    case "$directory_config_path" in
+    *.txt)
+        ;;
+    *)
+        echo "directory 参数必须指向 txt 配置文件，例如：directory=/path/to/directory.txt"
+        exit 1
+        ;;
+    esac
+
+    if [ ! -f "$directory_config_path" ]
+    then
+        echo "directory 配置文件不存在：$directory_config_path"
+        exit 1
+    fi
+fi
 
 time_start="${business_args[0]}"
 time_end="${business_args[1]}"
@@ -160,6 +168,9 @@ from datetime import datetime
 
 report_mode, time_start, time_end, author_filter, default_dir, output_path, directory_config_path, *input_paths = sys.argv[1:]
 
+def print_progress(message):
+    print(f"[进度] {message}", flush=True)
+
 def run_git(repo_path, args):
     return subprocess.check_output(["git", "-C", repo_path, *args], text=True, stderr=subprocess.DEVNULL)
 
@@ -179,29 +190,43 @@ def git_branch(path):
 def read_directory_config():
     if not directory_config_path:
         return []
+    print_progress(f"读取仓库清单：{directory_config_path}")
     paths = []
     with open(directory_config_path, "r", encoding="utf-8") as file:
         for line in file:
             value = line.strip()
             if value and not value.startswith("#"):
                 paths.append(value)
+    print_progress(f"仓库清单读取完成，共 {len(paths)} 个路径")
     return paths
 
 def discover_repos():
+    print_progress("开始识别 Git 仓库")
     configured_paths = read_directory_config()
-    candidates = [*configured_paths, *input_paths] or [default_dir]
+    if directory_config_path:
+        candidates = [*configured_paths, *input_paths]
+    else:
+        candidates = input_paths or [default_dir]
     roots = []
-    for candidate in candidates:
+    print_progress(f"待检查路径数量：{len(candidates)}")
+    for index, candidate in enumerate(candidates, start=1):
         path = os.path.realpath(candidate)
+        print_progress(f"检查路径 {index}/{len(candidates)}：{path}")
         if is_git_repo(path):
-            roots.append(git_root(path))
+            root = git_root(path)
+            print_progress(f"识别到仓库：{root}")
+            roots.append(root)
             continue
         if not input_paths and os.path.isdir(path):
             for name in sorted(os.listdir(path)):
                 child = os.path.join(path, name)
                 if os.path.isdir(child) and is_git_repo(child):
-                    roots.append(git_root(child))
-    return sorted(set(roots))
+                    root = git_root(child)
+                    print_progress(f"识别到子仓库：{root}")
+                    roots.append(root)
+    repos = sorted(set(roots))
+    print_progress(f"Git 仓库识别完成，共 {len(repos)} 个仓库")
+    return repos
 
 def parse_numstat_line(line):
     parts = line.split("\t")
@@ -217,6 +242,7 @@ def parse_numstat_line(line):
 
 def parse_commits(repo_path):
     project_name = os.path.basename(repo_path)
+    print_progress(f"开始读取仓库提交：{project_name}（{repo_path}）")
     args = [
         "log",
         f"--after={time_start}",
@@ -228,6 +254,7 @@ def parse_commits(repo_path):
     if author_filter:
         args.insert(1, f"--author={author_filter}")
     raw = run_git(repo_path, args)
+    print_progress(f"Git 日志读取完成：{project_name}，开始解析提交记录")
     commits = []
     current = None
     header = []
@@ -270,6 +297,7 @@ def parse_commits(repo_path):
 
     if current:
         commits.append(current)
+    print_progress(f"仓库解析完成：{project_name}，提交 {len(commits)} 次")
     return commits
 
 def format_number(value):
@@ -411,17 +439,23 @@ def print_web_summary(payload):
         for error in payload["errors"]:
             print(f"  - {error['project']}: {error['message']}")
 
+print_progress(f"统计时间范围：{time_start} 至 {time_end}")
+if author_filter:
+    print_progress(f"作者关键词：{author_filter}")
 repos = discover_repos()
 all_commits = []
 errors = []
-for repo in repos:
+for index, repo in enumerate(repos, start=1):
     try:
+        print_progress(f"处理仓库 {index}/{len(repos)}")
         all_commits.extend(parse_commits(repo))
     except Exception as exc:
+        print_progress(f"仓库读取失败：{os.path.basename(repo)}，{exc}")
         errors.append({"project": os.path.basename(repo), "message": str(exc)})
 
 authors = sorted({commit["author"] for commit in all_commits})
 projects = sorted({commit["project"] for commit in all_commits})
+print_progress(f"统计数据汇总完成：{len(projects)} 个项目，{len(authors)} 位开发者，{len(all_commits)} 次提交")
 payload = {
     "generated_at": datetime.now().isoformat(timespec="seconds"),
     "default_filter": {
@@ -437,6 +471,7 @@ payload = {
 }
 with open(output_path, "w", encoding="utf-8") as file:
     json.dump(payload, file, ensure_ascii=False)
+print_progress(f"报告数据已生成：{output_path}")
 
 if report_mode == "web":
     print_web_summary(payload)

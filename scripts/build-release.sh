@@ -19,6 +19,7 @@ mkdir -p "$artifact_dir/bin" "$artifact_dir/public"
 
 cp bin/git-workload-report.sh "$artifact_dir/bin/"
 cp start.sh "$artifact_dir/"
+cp directory.txt "$artifact_dir/"
 cp -R public/local-report "$artifact_dir/public/"
 cp README.md LICENSE "$artifact_dir/"
 chmod +x "$artifact_dir/bin/git-workload-report.sh"

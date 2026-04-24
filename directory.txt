@@ -1,0 +1,5 @@
+# 每行填写一个需要统计的 Git 仓库路径。
+# 空行和 # 开头的注释行会被忽略。
+# 示例：
+# /Users/peng/Desktop/Project/project-a
+# /Users/peng/Desktop/Project/project-b
