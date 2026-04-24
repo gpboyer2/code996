@@ -40,16 +40,13 @@
 
 ### 命令格式
 
-```bash
-git-workload-report [开始日期] [结束日期] [作者关键词] [仓库路径...]
-git-workload-report web [开始日期] [结束日期] [作者关键词] [仓库路径...]
-git-workload-report directory=/path/to/directory.txt [web] [开始日期] [结束日期] [作者关键词]
-```
-
-解压制品后也可以用：
+解压制品后用：
 
 ```bash
 ./start.sh [参数...]
+./start.sh [开始日期] [结束日期] [作者关键词] [仓库路径...]
+./start.sh web [开始日期] [结束日期] [作者关键词] [仓库路径...]
+./start.sh directory=/path/to/directory.txt [web] [开始日期] [结束日期] [作者关键词]
 ```
 
 ### 参数说明
@@ -239,13 +236,13 @@ npm run build-local
 Web 相关改动需要额外执行：
 
 ```bash
-GIT_WORKLOAD_REPORT_PORT=21960 ./bin/git-workload-report.sh directory=/Users/peng/Desktop/Project/git-workload/directory.txt web 2026-04-01 2026-04-24
+GIT_WORKLOAD_REPORT_PORT=21960 ./start.sh directory=./directory.txt web 2026-04-01 2026-04-24
 ```
 
 制品检查：
 
 ```bash
-tar -tzf git-workload-report-v1.0.5.tar.gz
+tar -tzf git-workload-report-v1.0.6.tar.gz
 ```
 
 需要确认制品内至少包含：
@@ -296,19 +293,19 @@ max(每周工作时长 - 40, 0) / 每周工作时长 * 100
 终端报告：
 
 ```bash
-./bin/git-workload-report.sh 2026-04-01 2026-04-24
+./start.sh 2026-04-01 2026-04-24
 ```
 
 指定作者：
 
 ```bash
-./bin/git-workload-report.sh 2026-04-01 2026-04-24 peng
+./start.sh 2026-04-01 2026-04-24 peng
 ```
 
 指定仓库清单：
 
 ```bash
-./bin/git-workload-report.sh directory=/Users/peng/Desktop/Project/git-workload/directory.txt
+./start.sh directory=/path/to/directory.txt
 ```
 
 使用默认仓库清单：
@@ -321,13 +318,13 @@ max(每周工作时长 - 40, 0) / 每周工作时长 * 100
 指定仓库清单并打开 Web 页面：
 
 ```bash
-./bin/git-workload-report.sh directory=/Users/peng/Desktop/Project/git-workload/directory.txt web
+./start.sh directory=/path/to/directory.txt web
 ```
 
 解压制品后启动：
 
 ```bash
-./start.sh directory=/Users/peng/Desktop/Project/git-workload/directory.txt web
+./start.sh directory=./directory.txt web
 ```
 
 ## 维护说明
@@ -335,5 +332,5 @@ max(每周工作时长 - 40, 0) / 每周工作时长 * 100
 - 修改脚本参数时，需要同步更新 README 的输入结构。
 - 修改 `report-data.json` 字段时，需要同步更新 README 的输出结构和页面读取逻辑。
 - 修改页面筛选时，需要同步检查 TXT 导出，保证看到的结果和导出的结果一致。
-- 修改打包逻辑时，需要确认 `start.sh`、`bin` 和 `public/local-report` 都进入制品。
+- 修改打包逻辑时，需要确认 `start.sh`、`directory.txt`、`bin` 和 `public/local-report` 都进入制品。
 - 注释只写业务目的、关键约束和公式来源，不解释普通赋值、循环和 DOM 操作。
