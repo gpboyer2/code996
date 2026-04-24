@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsc -w",
+    "dev": "npm run build && GIT_WORKLOAD_REPORT_KEEP_ALIVE=1 ./bin/git-workload-report.sh",
     "preview": "node dist/index.js",
     "test": "jest"
   },

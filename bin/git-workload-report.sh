@@ -265,3 +265,9 @@ echo "本地服务进程：$server_pid"
 echo "如需指定端口，可设置环境变量：GIT_WORKLOAD_REPORT_PORT=19960"
 
 $open_url "$local_url"
+
+if [ "$GIT_WORKLOAD_REPORT_KEEP_ALIVE" = "1" ]
+then
+    echo "dev 模式会保持本地服务运行，按 Ctrl+C 停止。"
+    wait "$server_pid"
+fi

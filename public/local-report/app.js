@@ -16,11 +16,7 @@ const state = {
 
 const dom = {
   reportMeta: document.getElementById("reportMeta"),
-  projectMode: document.getElementById("projectMode"),
-  projectKeyword: document.getElementById("projectKeyword"),
   projectChoices: document.getElementById("projectChoices"),
-  authorMode: document.getElementById("authorMode"),
-  authorKeyword: document.getElementById("authorKeyword"),
   authorChoices: document.getElementById("authorChoices"),
   startDate: document.getElementById("startDate"),
   endDate: document.getElementById("endDate"),
@@ -55,17 +51,22 @@ function estimateHours(commits) {
 }
 
 function renderChoices(container, values, selectedSet) {
-  container.innerHTML = values
-    .map((value) => {
-      const checked = selectedSet.has(value) ? "checked" : ""
-      return `<label><input type="checkbox" value="${value}" ${checked} />${value}</label>`
-    })
-    .join("")
+  container.textContent = ""
+  values.forEach((value) => {
+    const label = document.createElement("label")
+    const input = document.createElement("input")
+    input.type = "checkbox"
+    input.value = value
+    input.checked = selectedSet.has(value)
+    label.append(input, value)
+    container.append(label)
+  })
 }
 
 function bindChoices(container, selectedSet) {
   container.addEventListener("change", (event) => {
     const input = event.target
+    if (!(input instanceof HTMLInputElement)) return
     if (input.checked) selectedSet.add(input.value)
     else selectedSet.delete(input.value)
     render()
@@ -73,21 +74,14 @@ function bindChoices(container, selectedSet) {
 }
 
 function getFilteredCommits() {
-  const projectMode = dom.projectMode.value
-  const projectKeyword = dom.projectKeyword.value.trim().toLowerCase()
-  const authorMode = dom.authorMode.value
-  const authorKeyword = dom.authorKeyword.value.trim().toLowerCase()
   const startDate = dom.startDate.value
   const endDate = dom.endDate.value
 
   return state.data.commits.filter((commit) => {
     if (startDate && commit.date < startDate) return false
     if (endDate && commit.date > endDate) return false
-    if (projectMode === "selected" && state.selectedProjects.size > 0 && !state.selectedProjects.has(commit.project)) return false
-    if (projectMode === "contains" && projectKeyword && !commit.project.toLowerCase().includes(projectKeyword)) return false
-    const authorText = `${commit.author} ${commit.email}`.toLowerCase()
-    if (authorMode === "selected" && state.selectedAuthors.size > 0 && !state.selectedAuthors.has(commit.author)) return false
-    if (authorMode === "contains" && authorKeyword && !authorText.includes(authorKeyword)) return false
+    if (state.selectedProjects.size > 0 && !state.selectedProjects.has(commit.project)) return false
+    if (state.selectedAuthors.size > 0 && !state.selectedAuthors.has(commit.author)) return false
     return true
   })
 }
@@ -195,13 +189,11 @@ async function bootstrap() {
   state.data = await response.json()
   dom.startDate.value = state.data.default_filter.start_date
   dom.endDate.value = state.data.default_filter.end_date
-  dom.authorKeyword.value = state.data.default_filter.author_keyword || ""
-  if (dom.authorKeyword.value) dom.authorMode.value = "contains"
   renderChoices(dom.projectChoices, state.data.projects, state.selectedProjects)
   renderChoices(dom.authorChoices, state.data.authors, state.selectedAuthors)
   bindChoices(dom.projectChoices, state.selectedProjects)
   bindChoices(dom.authorChoices, state.selectedAuthors)
-  ;[dom.projectMode, dom.projectKeyword, dom.authorMode, dom.authorKeyword, dom.startDate, dom.endDate].forEach((element) => {
+  ;[dom.startDate, dom.endDate].forEach((element) => {
     element.addEventListener("input", render)
     element.addEventListener("change", render)
   })
