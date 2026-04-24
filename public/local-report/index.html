@@ -33,9 +33,11 @@
 
         <div class="filter-block">
           <label>时间段筛选</label>
-          <div class="date-range">
-            <input id="startDate" type="date" />
-            <input id="endDate" type="date" />
+          <div class="period-list" id="periodChoices"></div>
+          <div class="date-range-label" id="dateRangeLabel"></div>
+          <div class="date-range custom-date-range" id="customDateRange">
+            <input id="startDate" type="date" aria-label="开始日期" />
+            <input id="endDate" type="date" aria-label="结束日期" />
           </div>
         </div>
       </section>
@@ -78,15 +80,31 @@
       <section class="content-grid">
         <article class="panel section">
           <h2>一周七天提交分布</h2>
-          <div class="chart" id="weekChart"></div>
+          <div class="chart-frame" id="weekChartFrame">
+            <canvas id="weekChart"></canvas>
+            <div class="empty">当前筛选条件下没有可展示的数据</div>
+          </div>
         </article>
         <article class="panel section">
           <h2>24 小时提交分布</h2>
-          <div class="chart" id="hourChart"></div>
+          <div class="chart-frame" id="hourChartFrame">
+            <canvas id="hourChart"></canvas>
+            <div class="empty">当前筛选条件下没有可展示的数据</div>
+          </div>
         </article>
         <article class="panel section">
-          <h2>开发者时间占比</h2>
-          <div class="chart" id="authorChart"></div>
+          <h2>开发者提交占比</h2>
+          <div class="chart-frame" id="authorChartFrame">
+            <canvas id="authorChart"></canvas>
+            <div class="empty">当前筛选条件下没有可展示的数据</div>
+          </div>
+        </article>
+        <article class="panel section">
+          <h2>项目提交占比</h2>
+          <div class="chart-frame" id="projectChartFrame">
+            <canvas id="projectChart"></canvas>
+            <div class="empty">当前筛选条件下没有可展示的数据</div>
+          </div>
         </article>
         <article class="panel section">
           <h2>开发者工作量</h2>
@@ -108,6 +126,7 @@
       </section>
     </main>
 
+    <script src="./chart.umd.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

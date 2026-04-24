@@ -9,6 +9,10 @@
   --color-green: #059669;
   --color-red: #dc2626;
   --color-purple: #7c3aed;
+  --color-orange: #f97316;
+  --color-cyan: #0891b2;
+  --color-pink: #db2777;
+  --color-yellow: #ca8a04;
   --shadow-panel: 0 10px 24px rgba(15, 23, 42, 0.06);
 }
 
@@ -90,10 +94,50 @@ input {
   padding: 0 10px;
 }
 
+.period-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel-soft);
+}
+
+.period-list button {
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel);
+  color: var(--color-text);
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.period-list button.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.date-range-label {
+  margin-top: 8px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
 .date-range {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  margin-top: 8px;
+}
+
+.custom-date-range {
+  display: none;
+}
+
+.custom-date-range.active {
+  display: grid;
 }
 
 .choice-list {
@@ -167,45 +211,14 @@ input {
   font-size: 18px;
 }
 
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
+.chart-frame {
+  position: relative;
   min-height: 240px;
-  padding: 12px 0 0;
-  overflow-x: auto;
 }
 
-.bar-item {
-  display: grid;
-  grid-template-rows: 1fr auto auto;
-  align-items: end;
-  justify-items: center;
-  min-width: 34px;
-  height: 210px;
-}
-
-.bar {
-  width: 24px;
-  min-height: 4px;
-  border-radius: 4px 4px 0 0;
-  background: var(--color-primary);
-}
-
-.bar.purple {
-  background: var(--color-purple);
-}
-
-.bar-value {
-  margin-top: 8px;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.bar-label {
-  margin-top: 4px;
-  color: var(--color-text);
-  font-size: 12px;
+.chart-frame canvas {
+  width: 100%;
+  height: 240px;
 }
 
 .table-wrap {
@@ -232,9 +245,18 @@ th {
 }
 
 .empty {
+  display: none;
   padding: 48px 16px;
   text-align: center;
   color: var(--color-muted);
+}
+
+.chart-frame.empty canvas {
+  display: none;
+}
+
+.chart-frame.empty .empty {
+  display: block;
 }
 
 @media (max-width: 980px) {

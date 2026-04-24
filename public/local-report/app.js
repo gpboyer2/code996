@@ -8,16 +8,33 @@ const weekLabels = {
   7: "周日",
 }
 
+const periodOptions = [
+  { value: "all", label: "全部时间" },
+  { value: "this-week", label: "本周" },
+  { value: "this-month", label: "本月" },
+  { value: "last-7", label: "近 7 天" },
+  { value: "last-30", label: "近 30 天" },
+  { value: "last-90", label: "近 90 天" },
+  { value: "this-year", label: "今年" },
+  { value: "custom", label: "自定义" },
+]
+
+const chartMap = new Map()
+
 const state = {
   data: null,
   selectedProjects: new Set(),
   selectedAuthors: new Set(),
+  period: "all",
 }
 
 const dom = {
   reportMeta: document.getElementById("reportMeta"),
   projectChoices: document.getElementById("projectChoices"),
   authorChoices: document.getElementById("authorChoices"),
+  periodChoices: document.getElementById("periodChoices"),
+  dateRangeLabel: document.getElementById("dateRangeLabel"),
+  customDateRange: document.getElementById("customDateRange"),
   startDate: document.getElementById("startDate"),
   endDate: document.getElementById("endDate"),
 }
@@ -30,11 +47,52 @@ function uniqueCount(list, selector) {
   return new Set(list.map(selector).filter(Boolean)).size
 }
 
+function parseDate(value) {
+  const [year, month, day] = value.split("-").map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function addDays(value, days) {
+  const date = parseDate(value)
+  date.setDate(date.getDate() + days)
+  return formatDate(date)
+}
+
+function clampDate(value, min, max) {
+  if (value < min) return min
+  if (value > max) return max
+  return value
+}
+
 function dateDiffDays(startDate, endDate) {
-  const start = new Date(`${startDate}T00:00:00`)
-  const end = new Date(`${endDate}T00:00:00`)
+  const start = parseDate(startDate)
+  const end = parseDate(endDate)
   const diff = Math.round((end - start) / 86400000) + 1
   return Math.max(diff, 1)
+}
+
+function getCssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+function chartColors() {
+  return [
+    getCssVar("--color-primary"),
+    getCssVar("--color-green"),
+    getCssVar("--color-purple"),
+    getCssVar("--color-orange"),
+    getCssVar("--color-cyan"),
+    getCssVar("--color-pink"),
+    getCssVar("--color-yellow"),
+    getCssVar("--color-red"),
+  ]
 }
 
 function estimateHours(commits) {
@@ -63,6 +121,18 @@ function renderChoices(container, values, selectedSet) {
   })
 }
 
+function renderPeriodChoices() {
+  dom.periodChoices.textContent = ""
+  periodOptions.forEach((option) => {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.textContent = option.label
+    button.dataset.period = option.value
+    if (state.period === option.value) button.classList.add("active")
+    dom.periodChoices.append(button)
+  })
+}
+
 function bindChoices(container, selectedSet) {
   container.addEventListener("change", (event) => {
     const input = event.target
@@ -71,6 +141,48 @@ function bindChoices(container, selectedSet) {
     else selectedSet.delete(input.value)
     render()
   })
+}
+
+function getRangeBounds() {
+  return {
+    min: state.data.default_filter.start_date,
+    max: state.data.default_filter.end_date,
+  }
+}
+
+function resolvePeriodRange(period) {
+  const { min, max } = getRangeBounds()
+  const today = parseDate(max)
+
+  if (period === "all") return { startDate: min, endDate: max }
+  if (period === "last-7") return { startDate: clampDate(addDays(max, -6), min, max), endDate: max }
+  if (period === "last-30") return { startDate: clampDate(addDays(max, -29), min, max), endDate: max }
+  if (period === "last-90") return { startDate: clampDate(addDays(max, -89), min, max), endDate: max }
+  if (period === "this-year") return { startDate: clampDate(`${today.getFullYear()}-01-01`, min, max), endDate: max }
+  if (period === "this-month") {
+    return { startDate: clampDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`, min, max), endDate: max }
+  }
+  if (period === "this-week") {
+    const mondayOffset = today.getDay() === 0 ? -6 : 1 - today.getDay()
+    return { startDate: clampDate(addDays(max, mondayOffset), min, max), endDate: max }
+  }
+  return {
+    startDate: clampDate(dom.startDate.value || min, min, max),
+    endDate: clampDate(dom.endDate.value || max, min, max),
+  }
+}
+
+function applyPeriod(period) {
+  const range = resolvePeriodRange(period)
+  if (range.startDate > range.endDate) {
+    const startDate = range.endDate
+    range.endDate = range.startDate
+    range.startDate = startDate
+  }
+  dom.startDate.value = range.startDate
+  dom.endDate.value = range.endDate
+  dom.customDateRange.classList.toggle("active", period === "custom")
+  dom.dateRangeLabel.textContent = `当前周期：${range.startDate} 至 ${range.endDate}`
 }
 
 function getFilteredCommits() {
@@ -92,25 +204,75 @@ function groupCount(commits, key, seed = []) {
   return [...map.entries()].map(([label, count]) => ({ label, count }))
 }
 
-function renderChart(containerId, list, labelFormatter, className = "") {
-  const container = document.getElementById(containerId)
-  const max = Math.max(...list.map((item) => item.count), 0)
-  if (!list.length || max === 0) {
-    container.innerHTML = '<div class="empty">当前筛选条件下没有可展示的数据</div>'
-    return
-  }
-  container.innerHTML = list
-    .map((item) => {
-      const height = Math.max(4, Math.round((item.count / max) * 160))
-      return `
-        <div class="bar-item">
-          <div class="bar ${className}" style="height: ${height}px"></div>
-          <div class="bar-value">${formatNumber(item.count)}</div>
-          <div class="bar-label">${labelFormatter(item.label)}</div>
-        </div>
-      `
-    })
-    .join("")
+function showChartEmpty(canvasId, isEmpty) {
+  const frame = document.getElementById(`${canvasId}Frame`)
+  frame.classList.toggle("empty", isEmpty)
+}
+
+function destroyChart(canvasId) {
+  const chart = chartMap.get(canvasId)
+  if (chart) chart.destroy()
+  chartMap.delete(canvasId)
+}
+
+function renderBarChart(canvasId, list, labelFormatter) {
+  destroyChart(canvasId)
+  const values = list.map((item) => item.count)
+  const isEmpty = !list.length || Math.max(...values, 0) === 0
+  showChartEmpty(canvasId, isEmpty)
+  if (isEmpty) return
+
+  const color = getCssVar("--color-primary")
+  const chart = new Chart(document.getElementById(canvasId), {
+    type: "bar",
+    data: {
+      labels: list.map((item) => labelFormatter(item.label)),
+      datasets: [{ label: "提交次数", data: values, backgroundColor: color, borderColor: color, borderWidth: 1 }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (context) => `提交次数：${formatNumber(context.raw)}` } },
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  })
+  chartMap.set(canvasId, chart)
+}
+
+function renderPieChart(canvasId, list) {
+  destroyChart(canvasId)
+  const rows = list.filter((item) => item.count > 0)
+  showChartEmpty(canvasId, rows.length === 0)
+  if (!rows.length) return
+
+  const colors = chartColors()
+  const total = rows.reduce((sum, item) => sum + item.count, 0)
+  const chart = new Chart(document.getElementById(canvasId), {
+    type: "pie",
+    data: {
+      labels: rows.map((item) => item.label),
+      datasets: [{ data: rows.map((item) => item.count), backgroundColor: rows.map((_, index) => colors[index % colors.length]) }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const ratio = total ? ((context.raw / total) * 100).toFixed(1) : "0.0"
+              return `${context.label}：${formatNumber(context.raw)} 次，${ratio}%`
+            },
+          },
+        },
+      },
+    },
+  })
+  chartMap.set(canvasId, chart)
 }
 
 function renderSummary(commits) {
@@ -168,18 +330,14 @@ function renderAuthorTable(commits) {
 function render() {
   const commits = getFilteredCommits()
   renderSummary(commits)
-  renderChart("weekChart", groupCount(commits, "week_day", ["1", "2", "3", "4", "5", "6", "7"]), (label) => weekLabels[label] || label)
-  renderChart(
+  renderBarChart("weekChart", groupCount(commits, "week_day", ["1", "2", "3", "4", "5", "6", "7"]), (label) => weekLabels[label] || label)
+  renderBarChart(
     "hourChart",
     groupCount(commits, "hour", Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"))),
     (label) => `${label}:00`
   )
-  renderChart(
-    "authorChart",
-    groupCount(commits, "author").sort((a, b) => b.count - a.count).slice(0, 12),
-    (label) => label,
-    "purple"
-  )
+  renderPieChart("authorChart", groupCount(commits, "author").sort((a, b) => b.count - a.count).slice(0, 12))
+  renderPieChart("projectChart", groupCount(commits, "project").sort((a, b) => b.count - a.count).slice(0, 12))
   renderAuthorTable(commits)
   dom.reportMeta.textContent = `本地生成时间：${state.data.generated_at}，当前结果包含 ${uniqueCount(commits, (item) => item.project)} 个项目、${uniqueCount(commits, (item) => item.author)} 位开发者。`
 }
@@ -187,15 +345,27 @@ function render() {
 async function bootstrap() {
   const response = await fetch("report-data.json")
   state.data = await response.json()
-  dom.startDate.value = state.data.default_filter.start_date
-  dom.endDate.value = state.data.default_filter.end_date
   renderChoices(dom.projectChoices, state.data.projects, state.selectedProjects)
   renderChoices(dom.authorChoices, state.data.authors, state.selectedAuthors)
+  renderPeriodChoices()
+  applyPeriod(state.period)
   bindChoices(dom.projectChoices, state.selectedProjects)
   bindChoices(dom.authorChoices, state.selectedAuthors)
+  dom.periodChoices.addEventListener("click", (event) => {
+    const button = event.target
+    if (!(button instanceof HTMLButtonElement)) return
+    state.period = button.dataset.period
+    renderPeriodChoices()
+    applyPeriod(state.period)
+    render()
+  })
   ;[dom.startDate, dom.endDate].forEach((element) => {
-    element.addEventListener("input", render)
-    element.addEventListener("change", render)
+    element.addEventListener("change", () => {
+      state.period = "custom"
+      renderPeriodChoices()
+      applyPeriod(state.period)
+      render()
+    })
   })
   render()
 }
