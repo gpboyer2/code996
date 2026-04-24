@@ -144,8 +144,6 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-height: 96px;
-  overflow: auto;
   padding: 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;

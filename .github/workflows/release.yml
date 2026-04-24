@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '制品版本号'
+        required: false
+        type: string
   push:
     tags:
       - 'v*'
@@ -29,12 +34,20 @@ jobs:
 
       - name: Get version from tag
         id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=$(node -e "console.log(require('./package.json').version)")
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build artifact
         id: tarball
         run: |
-          VERSION="${{ steps.get_version.outputs.VERSION }}" npm run build
+          VERSION="${{ steps.get_version.outputs.VERSION }}" npm run build-local
           TARBALL="git-workload-report-v${{ steps.get_version.outputs.VERSION }}.tar.gz"
           echo "TARBALL=$TARBALL" >> $GITHUB_OUTPUT
 

@@ -72,5 +72,8 @@ GIT_WORKLOAD_REPORT_PORT=21000 git-workload-report 2026-04-01 2026-04-24
 npm install
 npm run compile
 npm test -- --runInBand
-npm run build
+npm run build-local
+npm run build-github
 ```
+
+`build-local` 会在本机生成压缩包。`build-github` 会推送当前分支并触发 GitHub Actions 的 Release workflow，远端再生成发布制品。

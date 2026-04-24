@@ -12,7 +12,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bash scripts/build-release.sh",
+    "build-local": "bash scripts/build-release.sh",
+    "build-github": "bash scripts/build-github.sh",
     "compile": "tsc",
     "dev": "npm run compile && GIT_WORKLOAD_REPORT_KEEP_ALIVE=1 ./bin/git-workload-report.sh",
     "preview": "node dist/index.js",
@@ -27,7 +28,7 @@
     "cli"
   ],
   "author": "gpboyer2",
-  "repository": "gpboyer2/git-workload-report",
+  "repository": "gpboyer2/git-workload",
   "license": "MIT",
   "devDependencies": {
     "@types/jest": "^29.5.12",
