@@ -4,6 +4,7 @@
     <!--
       本页面的业务目的必须保持清晰：它是打包产物内置的离线中文报告页。
       禁止把数据展示入口改回 GitHub Pages、Vercel 或任何外网网页；脚本只能启动 localhost。
+      页面筛选只能使用脚本生成的本地 report-data.json，不能依赖公网接口或远程资源。
     -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,6 +13,7 @@
       :root {
         --color-bg: #f6f8fb;
         --color-panel: #ffffff;
+        --color-panel-soft: #f8fafc;
         --color-text: #1f2937;
         --color-muted: #667085;
         --color-border: #d9e2ec;
@@ -19,6 +21,8 @@
         --color-primary-soft: #dbeafe;
         --color-green: #059669;
         --color-red: #dc2626;
+        --color-purple: #7c3aed;
+        --shadow-panel: 0 10px 24px rgba(15, 23, 42, 0.06);
       }
 
       * {
@@ -34,14 +38,24 @@
           "Microsoft YaHei", sans-serif;
       }
 
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
       .page {
-        width: min(1120px, calc(100% - 32px));
+        width: min(1280px, calc(100% - 32px));
         margin: 0 auto;
-        padding: 32px 0;
+        padding: 28px 0;
       }
 
       .page-header {
-        margin-bottom: 24px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 20px;
       }
 
       .page-header h1 {
@@ -56,17 +70,90 @@
         font-size: 14px;
       }
 
+      .panel {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        box-shadow: var(--shadow-panel);
+      }
+
+      .filter-panel {
+        display: grid;
+        grid-template-columns: 1.2fr 1.2fr 1fr;
+        gap: 16px;
+        margin-bottom: 18px;
+        padding: 16px;
+      }
+
+      .filter-block {
+        min-width: 0;
+      }
+
+      .filter-block label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--color-muted);
+        font-size: 13px;
+      }
+
+      .filter-row {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 8px;
+      }
+
+      .filter-row select,
+      .filter-row input,
+      .date-range input {
+        width: 100%;
+        height: 36px;
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        padding: 0 10px;
+      }
+
+      .date-range {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .choice-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-height: 96px;
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        background: var(--color-panel-soft);
+      }
+
+      .choice-list label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 5px 8px;
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 13px;
+        cursor: pointer;
+      }
+
       .summary-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 12px;
-        margin-bottom: 24px;
+        margin-bottom: 18px;
       }
 
       .summary-card {
-        background: var(--color-panel);
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
         padding: 16px;
       }
 
@@ -89,8 +176,14 @@
         color: var(--color-red);
       }
 
+      .content-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
       .section {
-        margin-bottom: 20px;
+        padding: 16px;
       }
 
       .section h2 {
@@ -102,11 +195,8 @@
         display: flex;
         align-items: flex-end;
         gap: 8px;
-        min-height: 260px;
-        padding: 18px;
-        background: var(--color-panel);
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
+        min-height: 240px;
+        padding: 12px 0 0;
         overflow-x: auto;
       }
 
@@ -115,8 +205,8 @@
         grid-template-rows: 1fr auto auto;
         align-items: end;
         justify-items: center;
-        min-width: 36px;
-        height: 220px;
+        min-width: 34px;
+        height: 210px;
       }
 
       .bar {
@@ -124,6 +214,10 @@
         min-height: 4px;
         border-radius: 4px 4px 0 0;
         background: var(--color-primary);
+      }
+
+      .bar.purple {
+        background: var(--color-purple);
       }
 
       .bar-value {
@@ -138,14 +232,41 @@
         font-size: 12px;
       }
 
-      .empty {
+      .table-wrap {
+        overflow: auto;
+      }
+
+      table {
         width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--color-border);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--color-muted);
+        font-weight: 600;
+      }
+
+      .empty {
         padding: 48px 16px;
         text-align: center;
         color: var(--color-muted);
       }
 
-      @media (max-width: 760px) {
+      @media (max-width: 980px) {
+        .filter-panel,
+        .content-grid {
+          grid-template-columns: 1fr;
+        }
+
         .summary-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -155,42 +276,117 @@
   <body>
     <main class="page">
       <header class="page-header">
-        <h1>Git 工作量离线报告</h1>
-        <p id="reportMeta"></p>
+        <div>
+          <h1>Git 工作量离线报告</h1>
+          <p id="reportMeta">正在加载本地报告数据...</p>
+        </div>
       </header>
 
+      <section class="panel filter-panel">
+        <div class="filter-block">
+          <label>项目筛选</label>
+          <div class="filter-row">
+            <select id="projectMode">
+              <option value="all">全部项目</option>
+              <option value="selected">多选项目</option>
+              <option value="contains">项目名包含</option>
+            </select>
+            <input id="projectKeyword" type="search" placeholder="输入项目名关键词" />
+          </div>
+          <div class="choice-list" id="projectChoices"></div>
+        </div>
+
+        <div class="filter-block">
+          <label>开发者筛选</label>
+          <div class="filter-row">
+            <select id="authorMode">
+              <option value="all">全部开发者</option>
+              <option value="selected">多选开发者</option>
+              <option value="contains">姓名或邮箱包含</option>
+            </select>
+            <input id="authorKeyword" type="search" placeholder="输入姓名或邮箱关键词" />
+          </div>
+          <div class="choice-list" id="authorChoices"></div>
+        </div>
+
+        <div class="filter-block">
+          <label>时间段筛选</label>
+          <div class="date-range">
+            <input id="startDate" type="date" />
+            <input id="endDate" type="date" />
+          </div>
+        </div>
+      </section>
+
       <section class="summary-grid">
-        <article class="summary-card">
+        <article class="panel summary-card">
           <div class="label">提交次数</div>
           <div class="value" id="commitCount">0</div>
         </article>
-        <article class="summary-card">
+        <article class="panel summary-card">
           <div class="label">新增代码行</div>
           <div class="value added" id="addedLines">0</div>
         </article>
-        <article class="summary-card">
+        <article class="panel summary-card">
           <div class="label">删除代码行</div>
           <div class="value deleted" id="deletedLines">0</div>
         </article>
-        <article class="summary-card">
+        <article class="panel summary-card">
           <div class="label">净变化行数</div>
           <div class="value" id="netLines">0</div>
         </article>
+        <article class="panel summary-card">
+          <div class="label">日均提交次数</div>
+          <div class="value" id="dailyCommits">0</div>
+        </article>
+        <article class="panel summary-card">
+          <div class="label">日均工作时长</div>
+          <div class="value" id="dailyWorkHours">0</div>
+        </article>
+        <article class="panel summary-card">
+          <div class="label">每周工作时长</div>
+          <div class="value" id="weeklyWorkHours">0</div>
+        </article>
+        <article class="panel summary-card">
+          <div class="label">加班时间占比</div>
+          <div class="value" id="overtimeRatio">0%</div>
+        </article>
       </section>
 
-      <section class="section">
-        <h2>一周七天提交分布</h2>
-        <div class="chart" id="weekChart"></div>
-      </section>
-
-      <section class="section">
-        <h2>24 小时提交分布</h2>
-        <div class="chart" id="hourChart"></div>
+      <section class="content-grid">
+        <article class="panel section">
+          <h2>一周七天提交分布</h2>
+          <div class="chart" id="weekChart"></div>
+        </article>
+        <article class="panel section">
+          <h2>24 小时提交分布</h2>
+          <div class="chart" id="hourChart"></div>
+        </article>
+        <article class="panel section">
+          <h2>开发者时间占比</h2>
+          <div class="chart" id="authorChart"></div>
+        </article>
+        <article class="panel section">
+          <h2>开发者工作量</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>开发者</th>
+                  <th>提交</th>
+                  <th>新增</th>
+                  <th>删除</th>
+                  <th>工作天数</th>
+                </tr>
+              </thead>
+              <tbody id="authorTable"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
     </main>
 
     <script>
-      const params = new URLSearchParams(window.location.search)
       const weekLabels = {
         1: "周一",
         2: "周二",
@@ -201,63 +397,209 @@
         7: "周日",
       }
 
-      function parseSeries(value) {
-        if (!value) return []
-        return value
-          .split(",")
-          .filter(Boolean)
-          .map((item) => {
-            const [count, label] = item.split("_")
-            return { label, count: Number(count) || 0 }
-          })
+      const state = {
+        data: null,
+        selectedProjects: new Set(),
+        selectedAuthors: new Set(),
+      }
+
+      const dom = {
+        reportMeta: document.getElementById("reportMeta"),
+        projectMode: document.getElementById("projectMode"),
+        projectKeyword: document.getElementById("projectKeyword"),
+        projectChoices: document.getElementById("projectChoices"),
+        authorMode: document.getElementById("authorMode"),
+        authorKeyword: document.getElementById("authorKeyword"),
+        authorChoices: document.getElementById("authorChoices"),
+        startDate: document.getElementById("startDate"),
+        endDate: document.getElementById("endDate"),
       }
 
       function formatNumber(value) {
         return Number(value || 0).toLocaleString("zh-CN")
       }
 
-      function renderChart(containerId, list, labelFormatter) {
+      function uniqueCount(list, selector) {
+        return new Set(list.map(selector).filter(Boolean)).size
+      }
+
+      function dateDiffDays(startDate, endDate) {
+        const start = new Date(`${startDate}T00:00:00`)
+        const end = new Date(`${endDate}T00:00:00`)
+        const diff = Math.round((end - start) / 86400000) + 1
+        return Math.max(diff, 1)
+      }
+
+      function estimateHours(commits) {
+        const byDate = new Map()
+        commits.forEach((commit) => {
+          if (!byDate.has(commit.date)) byDate.set(commit.date, [])
+          byDate.get(commit.date).push(Number(commit.hour))
+        })
+        let total = 0
+        byDate.forEach((hours) => {
+          total += Math.max(...hours) - Math.min(...hours) + 1
+        })
+        return { workDays: byDate.size, totalHours: total }
+      }
+
+      function renderChoices(container, values, selectedSet) {
+        container.innerHTML = values
+          .map((value) => {
+            const checked = selectedSet.has(value) ? "checked" : ""
+            return `<label><input type="checkbox" value="${value}" ${checked} />${value}</label>`
+          })
+          .join("")
+      }
+
+      function bindChoices(container, selectedSet) {
+        container.addEventListener("change", (event) => {
+          const input = event.target
+          if (input.checked) selectedSet.add(input.value)
+          else selectedSet.delete(input.value)
+          render()
+        })
+      }
+
+      function getFilteredCommits() {
+        const projectMode = dom.projectMode.value
+        const projectKeyword = dom.projectKeyword.value.trim().toLowerCase()
+        const authorMode = dom.authorMode.value
+        const authorKeyword = dom.authorKeyword.value.trim().toLowerCase()
+        const startDate = dom.startDate.value
+        const endDate = dom.endDate.value
+
+        return state.data.commits.filter((commit) => {
+          if (startDate && commit.date < startDate) return false
+          if (endDate && commit.date > endDate) return false
+          if (projectMode === "selected" && state.selectedProjects.size > 0 && !state.selectedProjects.has(commit.project)) return false
+          if (projectMode === "contains" && projectKeyword && !commit.project.toLowerCase().includes(projectKeyword)) return false
+          const authorText = `${commit.author} ${commit.email}`.toLowerCase()
+          if (authorMode === "selected" && state.selectedAuthors.size > 0 && !state.selectedAuthors.has(commit.author)) return false
+          if (authorMode === "contains" && authorKeyword && !authorText.includes(authorKeyword)) return false
+          return true
+        })
+      }
+
+      function groupCount(commits, key, seed = []) {
+        const map = new Map(seed.map((item) => [item, 0]))
+        commits.forEach((commit) => map.set(commit[key], (map.get(commit[key]) || 0) + 1))
+        return [...map.entries()].map(([label, count]) => ({ label, count }))
+      }
+
+      function renderChart(containerId, list, labelFormatter, className = "") {
         const container = document.getElementById(containerId)
         const max = Math.max(...list.map((item) => item.count), 0)
-
         if (!list.length || max === 0) {
-          container.innerHTML = '<div class="empty">当前时间范围内没有可展示的数据</div>'
+          container.innerHTML = '<div class="empty">当前筛选条件下没有可展示的数据</div>'
           return
         }
-
         container.innerHTML = list
           .map((item) => {
-            const height = Math.max(4, Math.round((item.count / max) * 170))
-            const label = labelFormatter(item.label)
+            const height = Math.max(4, Math.round((item.count / max) * 160))
             return `
               <div class="bar-item">
-                <div class="bar" style="height: ${height}px"></div>
+                <div class="bar ${className}" style="height: ${height}px"></div>
                 <div class="bar-value">${formatNumber(item.count)}</div>
-                <div class="bar-label">${label}</div>
+                <div class="bar-label">${labelFormatter(item.label)}</div>
               </div>
             `
           })
           .join("")
       }
 
-      const time = params.get("time") || ""
-      const [startTime = "", endTime = ""] = time.split("_")
-      const commitCount = Number(params.get("commits") || 0)
-      const addedLines = Number(params.get("added") || 0)
-      const deletedLines = Number(params.get("deleted") || 0)
-      const netLines = addedLines - deletedLines
+      function renderSummary(commits) {
+        const added = commits.reduce((sum, commit) => sum + commit.added, 0)
+        const deleted = commits.reduce((sum, commit) => sum + commit.deleted, 0)
+        const startDate = dom.startDate.value || state.data.default_filter.start_date
+        const endDate = dom.endDate.value || state.data.default_filter.end_date
+        const days = dateDiffDays(startDate, endDate)
+        const work = estimateHours(commits)
+        const dailyHours = work.workDays ? work.totalHours / work.workDays : 0
+        const weeklyHours = dailyHours * 5
+        const overtimeHours = Math.max(weeklyHours - 40, 0)
+        const overtimeRatio = weeklyHours ? (overtimeHours / weeklyHours) * 100 : 0
 
-      document.getElementById("reportMeta").textContent =
-        startTime && endTime
-          ? `统计时间范围：${startTime} 至 ${endTime}`
-          : "统计时间范围：未指定"
-      document.getElementById("commitCount").textContent = formatNumber(commitCount)
-      document.getElementById("addedLines").textContent = formatNumber(addedLines)
-      document.getElementById("deletedLines").textContent = formatNumber(deletedLines)
-      document.getElementById("netLines").textContent = formatNumber(netLines)
+        document.getElementById("commitCount").textContent = formatNumber(commits.length)
+        document.getElementById("addedLines").textContent = formatNumber(added)
+        document.getElementById("deletedLines").textContent = formatNumber(deleted)
+        document.getElementById("netLines").textContent = formatNumber(added - deleted)
+        document.getElementById("dailyCommits").textContent = (commits.length / days).toFixed(1)
+        document.getElementById("dailyWorkHours").textContent = `${dailyHours.toFixed(1)}h`
+        document.getElementById("weeklyWorkHours").textContent = `${weeklyHours.toFixed(1)}h`
+        document.getElementById("overtimeRatio").textContent = `${overtimeRatio.toFixed(1)}%`
+      }
 
-      renderChart("weekChart", parseSeries(params.get("week")), (label) => weekLabels[label] || label)
-      renderChart("hourChart", parseSeries(params.get("hour")), (label) => `${label}:00`)
+      function renderAuthorTable(commits) {
+        const map = new Map()
+        commits.forEach((commit) => {
+          if (!map.has(commit.author)) {
+            map.set(commit.author, { author: commit.author, commits: 0, added: 0, deleted: 0, dates: new Set() })
+          }
+          const row = map.get(commit.author)
+          row.commits += 1
+          row.added += commit.added
+          row.deleted += commit.deleted
+          row.dates.add(commit.date)
+        })
+        const rows = [...map.values()].sort((a, b) => b.commits - a.commits)
+        document.getElementById("authorTable").innerHTML = rows.length
+          ? rows
+              .map(
+                (row) => `
+                  <tr>
+                    <td>${row.author}</td>
+                    <td>${formatNumber(row.commits)}</td>
+                    <td>${formatNumber(row.added)}</td>
+                    <td>${formatNumber(row.deleted)}</td>
+                    <td>${formatNumber(row.dates.size)}</td>
+                  </tr>
+                `
+              )
+              .join("")
+          : '<tr><td colspan="5">当前筛选条件下没有数据</td></tr>'
+      }
+
+      function render() {
+        const commits = getFilteredCommits()
+        renderSummary(commits)
+        renderChart("weekChart", groupCount(commits, "week_day", ["1", "2", "3", "4", "5", "6", "7"]), (label) => weekLabels[label] || label)
+        renderChart(
+          "hourChart",
+          groupCount(commits, "hour", Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"))),
+          (label) => `${label}:00`
+        )
+        renderChart(
+          "authorChart",
+          groupCount(commits, "author").sort((a, b) => b.count - a.count).slice(0, 12),
+          (label) => label,
+          "purple"
+        )
+        renderAuthorTable(commits)
+        dom.reportMeta.textContent = `本地生成时间：${state.data.generated_at}，当前结果包含 ${uniqueCount(commits, (item) => item.project)} 个项目、${uniqueCount(commits, (item) => item.author)} 位开发者。`
+      }
+
+      async function bootstrap() {
+        const response = await fetch("report-data.json")
+        state.data = await response.json()
+        dom.startDate.value = state.data.default_filter.start_date
+        dom.endDate.value = state.data.default_filter.end_date
+        dom.authorKeyword.value = state.data.default_filter.author_keyword || ""
+        if (dom.authorKeyword.value) dom.authorMode.value = "contains"
+        renderChoices(dom.projectChoices, state.data.projects, state.selectedProjects)
+        renderChoices(dom.authorChoices, state.data.authors, state.selectedAuthors)
+        bindChoices(dom.projectChoices, state.selectedProjects)
+        bindChoices(dom.authorChoices, state.selectedAuthors)
+        ;[dom.projectMode, dom.projectKeyword, dom.authorMode, dom.authorKeyword, dom.startDate, dom.endDate].forEach((element) => {
+          element.addEventListener("input", render)
+          element.addEventListener("change", render)
+        })
+        render()
+      }
+
+      bootstrap().catch((error) => {
+        dom.reportMeta.textContent = `本地报告数据加载失败：${error.message}`
+      })
     </script>
   </body>
 </html>

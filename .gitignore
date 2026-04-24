@@ -28,3 +28,6 @@ CLAUDE.md
 AGENTS.md
 .cursor/
 .claude/
+
+# 本地参考素材，不进入项目产物
+code996-gh-pages/
