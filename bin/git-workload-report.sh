@@ -20,7 +20,7 @@ Help()
    echo "示例: ./start.sh 2026-04-01 2026-04-24 peng /path/to/project-a /path/to/project-b"
    echo "示例: ./start.sh directory=./directory.txt web"
    echo "说明:"
-   echo "  默认直接在终端输出完整汇总报告。"
+   echo "  默认导出最近 7 天的 XLSX 报告到当前目录。"
    echo "  使用 web 子命令时启动本机 localhost 可视化报告页。"
    echo "  directory 参数必须指向 .txt 配置文件，文件名可自定义，后缀必须是 txt。"
    echo "  不传 directory 参数时，默认读取制品根目录的 directory.txt。"
@@ -39,6 +39,8 @@ fi
 report_mode="terminal"
 directory_config_path=""
 business_args=()
+time_start_provided="0"
+time_end_provided="0"
 
 for arg in "$@"
 do
@@ -129,9 +131,19 @@ time_start="${business_args[0]}"
 time_end="${business_args[1]}"
 author="${business_args[2]}"
 
+if [ -n "$time_start" ]
+then
+    time_start_provided="1"
+fi
+
+if [ -n "$time_end" ]
+then
+    time_end_provided="1"
+fi
+
 if [ -z "$time_start" ]
 then
-    time_start="2022-01-01"
+    time_start=$(date -d "$(date "+%Y-%m-%d") -6 day" "+%Y-%m-%d")
 fi
 
 if [ -z "$time_end" ]
@@ -142,6 +154,16 @@ fi
 if [ -z "$author" ]
 then
     author=""
+fi
+
+default_filter_start="$time_start"
+default_filter_end="$time_end"
+collect_time_start="$time_start"
+collect_time_end="$time_end"
+
+if [ "$report_mode" = "web" ] && [ "$time_start_provided" = "0" ]
+then
+    collect_time_start="2022-01-01"
 fi
 
 repo_args=()
@@ -159,14 +181,15 @@ then
     cp -R "$source_web_dir"/. "$work_dir"/
 fi
 
-python3 - "$report_mode" "$time_start" "$time_end" "$author" "$script_dir" "$work_dir/report-data.json" "$directory_config_path" "${repo_args[@]}" <<'PY'
+python3 - "$report_mode" "$collect_time_start" "$collect_time_end" "$default_filter_start" "$default_filter_end" "$author" "$script_dir" "$work_dir/report-data.json" "$directory_config_path" "${repo_args[@]}" <<'PY'
 import json
 import os
 import subprocess
 import sys
+import zipfile
 from datetime import datetime
 
-report_mode, time_start, time_end, author_filter, default_dir, output_path, directory_config_path, *input_paths = sys.argv[1:]
+report_mode, collect_time_start, collect_time_end, default_filter_start, default_filter_end, author_filter, default_dir, output_path, directory_config_path, *input_paths = sys.argv[1:]
 
 def print_progress(message):
     print(f"[进度] {message}", flush=True)
@@ -245,8 +268,8 @@ def parse_commits(repo_path):
     print_progress(f"开始读取仓库提交：{project_name}（{repo_path}）")
     args = [
         "log",
-        f"--after={time_start}",
-        f"--before={time_end}",
+        f"--after={collect_time_start}",
+        f"--before={collect_time_end}",
         "--date=iso-strict",
         "--pretty=format:--GIT-WORKLOAD-COMMIT--%n%H%n%an%n%ae%n%ad%n%s",
         "--numstat",
@@ -363,7 +386,8 @@ def print_terminal_report(payload):
     print()
 
     print("核心汇总")
-    print(f"  项目数量：{format_number(len(payload['projects']))}")
+    print(f"  仓库数量：{format_number(len(payload['projects']))}")
+    print(f"  有提交项目数：{format_number(len(payload['active_projects']))}")
     print(f"  开发者数量：{format_number(len(payload['authors']))}")
     print(f"  提交次数：{format_number(len(commits))}")
     print(f"  新增代码行：{format_number(total_added)}")
@@ -423,14 +447,242 @@ def print_terminal_report(payload):
             print(f"  - {error['project']}: {error['message']}")
         print()
 
-def print_web_summary(payload):
+def build_project_export_rows(commits):
+    rows = {}
+    for commit in commits:
+        project = commit["project"]
+        if project not in rows:
+            rows[project] = {
+                "project": project,
+                "total_lines": 0,
+                "added": 0,
+                "deleted": 0,
+                "commit_count": 0,
+                "authors": set(),
+            }
+        row = rows[project]
+        row["total_lines"] += commit["added"] + commit["deleted"]
+        row["added"] += commit["added"]
+        row["deleted"] += commit["deleted"]
+        row["commit_count"] += 1
+        row["authors"].add(commit["author"])
+
+    result = []
+    for row in rows.values():
+        author_count = len(row["authors"])
+        result.append({
+            "project": row["project"],
+            "total_lines": row["total_lines"],
+            "added": row["added"],
+            "deleted": row["deleted"],
+            "commit_count": row["commit_count"],
+            "author_count": author_count,
+            "per_author_lines": f"{(row['total_lines'] / author_count) if author_count else 0:.2f}",
+        })
+    return sorted(result, key=lambda item: item["total_lines"], reverse=True)
+
+def escape_xml(value):
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+def string_cell(ref, value, style_index):
+    return f'<c r="{ref}" s="{style_index}" t="inlineStr"><is><t>{escape_xml(value)}</t></is></c>'
+
+def number_cell(ref, value, style_index):
+    return f'<c r="{ref}" s="{style_index}"><v>{value}</v></c>'
+
+def build_xlsx_sheet_xml(payload):
     commits = payload["commits"]
+    default_filter = payload["default_filter"]
+    filter_range_text = f'{default_filter["start_date"]} 至 {default_filter["end_date"]}'
+    generated_at_text = payload["generated_at"]
+    project_rows = build_project_export_rows(commits)
+    total_rows = max(len(project_rows), 8)
+    rows = []
+
+    rows.append(
+        '<row r="1">'
+        + string_cell("A1", "时间", 1)
+        + string_cell("B1", filter_range_text, 1)
+        + '<c r="C1" s="1"/>'
+        + '<c r="D1" s="1"/>'
+        + string_cell("E1", "报告输出时间", 1)
+        + string_cell("F1", generated_at_text, 1)
+        + '<c r="G1" s="1"/>'
+        + "</row>"
+    )
+    rows.append(
+        '<row r="2">'
+        + string_cell("A2", "项目代码情况", 2)
+        + '<c r="B2" s="2"/>'
+        + '<c r="C2" s="2"/>'
+        + '<c r="D2" s="2"/>'
+        + string_cell("E2", "人均生产力", 2)
+        + '<c r="F2" s="2"/>'
+        + '<c r="G2" s="2"/>'
+        + "</row>"
+    )
+    rows.append(
+        '<row r="3">'
+        + string_cell("A3", "项目名", 3)
+        + string_cell("B3", "提交代码总行数", 3)
+        + string_cell("C3", "新增代码行数", 3)
+        + string_cell("D3", "删除代码行数", 3)
+        + string_cell("E3", "本周期提交次数", 3)
+        + string_cell("F3", "本周期提交人次", 3)
+        + string_cell("G3", "本周期人均提交代码行数", 3)
+        + "</row>"
+    )
+
+    for index in range(total_rows):
+        row_number = index + 4
+        row = project_rows[index] if index < len(project_rows) else None
+        row_xml = [f'<row r="{row_number}">']
+        row_xml.append(string_cell(f"A{row_number}", row["project"] if row else "", 4))
+        row_xml.append(number_cell(f"B{row_number}", row["total_lines"], 4) if row else f'<c r="B{row_number}" s="4"/>')
+        row_xml.append(number_cell(f"C{row_number}", row["added"], 4) if row else f'<c r="C{row_number}" s="4"/>')
+        row_xml.append(number_cell(f"D{row_number}", row["deleted"], 4) if row else f'<c r="D{row_number}" s="4"/>')
+        row_xml.append(number_cell(f"E{row_number}", row["commit_count"], 4) if row else f'<c r="E{row_number}" s="4"/>')
+        row_xml.append(number_cell(f"F{row_number}", row["author_count"], 4) if row else f'<c r="F{row_number}" s="4"/>')
+        row_xml.append(number_cell(f"G{row_number}", row["per_author_lines"], 4) if row else f'<c r="G{row_number}" s="4"/>')
+        row_xml.append("</row>")
+        rows.append("".join(row_xml))
+
+    last_row = total_rows + 3
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:G{last_row}"/>
+  <sheetViews>
+    <sheetView tabSelected="1" workbookViewId="0"/>
+  </sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+  <cols>
+    <col min="1" max="1" width="24" customWidth="1"/>
+    <col min="2" max="2" width="18" customWidth="1"/>
+    <col min="3" max="4" width="16" customWidth="1"/>
+    <col min="5" max="6" width="18" customWidth="1"/>
+    <col min="7" max="7" width="22" customWidth="1"/>
+  </cols>
+  <sheetData>
+    {''.join(rows)}
+  </sheetData>
+  <mergeCells count="2">
+    <mergeCell ref="A2:D2"/>
+    <mergeCell ref="E2:G2"/>
+  </mergeCells>
+  <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+</worksheet>"""
+
+def build_xlsx_styles_xml():
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="微软雅黑"/></font>
+    <font><b/><sz val="11"/><name val="微软雅黑"/></font>
+  </fonts>
+  <fills count="4">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFD9E2EC"/></left>
+      <right style="thin"><color rgb="FFD9E2EC"/></right>
+      <top style="thin"><color rgb="FFD9E2EC"/></top>
+      <bottom style="thin"><color rgb="FFD9E2EC"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="5">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+  </cellXfs>
+  <cellStyles count="1">
+    <cellStyle name="常规" xfId="0" builtinId="0"/>
+  </cellStyles>
+</styleSheet>"""
+
+def write_xlsx_report(payload):
+    file_name = datetime.now().strftime("output_%Y%m%d%H%M.xlsx")
+    output_file_path = os.path.join(os.getcwd(), file_name)
+    files = {
+        "[Content_Types].xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>""",
+        "_rels/.rels": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>""",
+        "docProps/app.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>git-workload-report</Application>
+  <HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>工作表</vt:lpstr></vt:variant><vt:variant><vt:i4>1</vt:i4></vt:variant></vt:vector></HeadingPairs>
+  <TitlesOfParts><vt:vector size="1" baseType="lpstr"><vt:lpstr>Sheet1</vt:lpstr></vt:vector></TitlesOfParts>
+</Properties>""",
+        "docProps/core.xml": f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>git-workload-report</dc:creator>
+  <cp:lastModifiedBy>git-workload-report</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">{datetime.now().isoformat()}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">{datetime.now().isoformat()}</dcterms:modified>
+</cp:coreProperties>""",
+        "xl/workbook.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>""",
+        "xl/_rels/workbook.xml.rels": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>""",
+        "xl/styles.xml": build_xlsx_styles_xml(),
+        "xl/worksheets/sheet1.xml": build_xlsx_sheet_xml(payload),
+    }
+    with zipfile.ZipFile(output_file_path, "w", compression=zipfile.ZIP_STORED) as archive:
+        for path, content in files.items():
+            archive.writestr(path, content)
+    return output_file_path
+
+def print_web_summary(payload):
+    default_filter = payload["default_filter"]
+    commits = [
+        commit
+        for commit in payload["commits"]
+        if default_filter["start_date"] <= commit["date"] <= default_filter["end_date"]
+    ]
     total_added = sum(commit["added"] for commit in commits)
     total_deleted = sum(commit["deleted"] for commit in commits)
     default_filter = payload["default_filter"]
     print(f"统计时间范围：{default_filter['start_date']} 至 {default_filter['end_date']}")
-    print(f"项目数量：{len(payload['projects'])}")
-    print(f"开发者数量：{len(payload['authors'])}")
+    print(f"仓库数量：{len(payload['projects'])}")
+    print(f"有提交项目数：{len({commit['project'] for commit in commits})}")
+    print(f"开发者数量：{len({commit['author'] for commit in commits})}")
     print(f"提交次数：{len(commits)}")
     print(f"新增代码行：{total_added}")
     print(f"删除代码行：{total_deleted}")
@@ -439,7 +691,7 @@ def print_web_summary(payload):
         for error in payload["errors"]:
             print(f"  - {error['project']}: {error['message']}")
 
-print_progress(f"统计时间范围：{time_start} 至 {time_end}")
+print_progress(f"统计时间范围：{collect_time_start} 至 {collect_time_end}")
 if author_filter:
     print_progress(f"作者关键词：{author_filter}")
 repos = discover_repos()
@@ -454,16 +706,22 @@ for index, repo in enumerate(repos, start=1):
         errors.append({"project": os.path.basename(repo), "message": str(exc)})
 
 authors = sorted({commit["author"] for commit in all_commits})
-projects = sorted({commit["project"] for commit in all_commits})
-print_progress(f"统计数据汇总完成：{len(projects)} 个项目，{len(authors)} 位开发者，{len(all_commits)} 次提交")
+projects = sorted({os.path.basename(path) for path in repos})
+active_projects = sorted({commit["project"] for commit in all_commits})
+print_progress(f"统计数据汇总完成：{len(projects)} 个仓库，{len(active_projects)} 个有提交项目，{len(authors)} 位开发者，{len(all_commits)} 次提交")
 payload = {
     "generated_at": datetime.now().isoformat(timespec="seconds"),
     "default_filter": {
-        "start_date": time_start,
-        "end_date": time_end,
+        "start_date": default_filter_start,
+        "end_date": default_filter_end,
         "author_keyword": author_filter,
     },
+    "data_range": {
+        "start_date": collect_time_start,
+        "end_date": collect_time_end,
+    },
     "projects": projects,
+    "active_projects": active_projects,
     "authors": authors,
     "repos": [{"name": os.path.basename(path), "branch": git_branch(path), "path": path} for path in repos],
     "commits": all_commits,
@@ -476,7 +734,18 @@ print_progress(f"报告数据已生成：{output_path}")
 if report_mode == "web":
     print_web_summary(payload)
 else:
-    print_terminal_report(payload)
+    export_path = write_xlsx_report(payload)
+    print()
+    print(f"XLSX 报告已导出：{export_path}")
+    print(f"统计时间范围：{payload['default_filter']['start_date']} 至 {payload['default_filter']['end_date']}")
+    print(f"仓库数量：{len(payload['projects'])}")
+    print(f"有提交项目数：{len(payload['active_projects'])}")
+    print(f"开发者数量：{len(payload['authors'])}")
+    print(f"提交次数：{len(payload['commits'])}")
+    if payload["errors"]:
+        print("部分项目读取失败：")
+        for error in payload["errors"]:
+            print(f"  - {error['project']}: {error['message']}")
 PY
 
 if [ "$report_mode" != "web" ]

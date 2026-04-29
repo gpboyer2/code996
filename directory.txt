@@ -3,3 +3,5 @@
 # 示例：
 # /Users/peng/Desktop/Project/project-a
 # /Users/peng/Desktop/Project/project-b
+/mnt/d/Projects/codex-config
+/mnt/d/Projects/git-workload

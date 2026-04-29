@@ -19,6 +19,7 @@
           <p id="reportMeta">正在加载本地报告数据...</p>
         </div>
         <div class="ph-right">
+          <button class="export-button" id="exportXlsx" type="button">导出XLSX</button>
           <button class="export-button" id="exportReport" type="button">导出 TXT</button>
         </div>
       </header>
@@ -46,6 +47,14 @@
       </section>
 
       <section class="summary-grid">
+        <article class="panel summary-card">
+          <div class="label">仓库数量</div>
+          <div class="value" id="repoCount">0</div>
+        </article>
+        <article class="panel summary-card">
+          <div class="label">有提交项目数</div>
+          <div class="value" id="activeProjectCount">0</div>
+        </article>
         <article class="panel summary-card">
           <div class="label">提交次数</div>
           <div class="value" id="commitCount">0</div>
